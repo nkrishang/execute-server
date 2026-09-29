@@ -1,0 +1,163 @@
+# execute-server base configuration.
+#
+# Secrets and endpoint URLs come from the environment as EXECUTE_<SECTION>__<KEY>, e.g.
+#   EXECUTE_SERVER__CALLBACK_BASE_URL, EXECUTE_PRIVY__APP_ID, EXECUTE_PRIVY__VERIFICATION_KEY,
+#   EXECUTE_ADDRESSES__FACTORY_ADDRESS, EXECUTE_INDEXER__BASE_URL, EXECUTE_INDEXER__WEBHOOK_SECRET,
+#   EXECUTE_ENGINE__BASE_URL, EXECUTE_ENGINE__WEBHOOK_SECRET, EXECUTE_ADMIN__TOKEN.
+# DATABASE_URL and PORT are read as-is (Railway provides both).
+
+[server]
+bind = "::"
+port = 8080
+# Base URL gum-indexer and gum-engine call back to: {callback_base_url}/v1/webhooks/{indexer,engine}.
+# The services share one Railway project, so this is the private-network address
+# (http://execute-server.railway.internal:8080), never the public api.execute.cash domain.
+callback_base_url = ""
+request_timeout_ms = 10000
+# An intent is bounded by the EIP-3860 init code limit (49,152 bytes), so its JSON is well under this.
+max_body_bytes = 262144
+# Requests in flight before the server sheds load with 503.
+max_in_flight = 4096
+shutdown_grace_secs = 25
+
+[database]
+max_connections = 32
+min_connections = 2
+acquire_timeout_ms = 3000
+auto_migrate = true
+# No database wait is unbounded (see src/db.rs).
+statement_timeout_ms = 30000
+lock_timeout_ms = 5000
+idle_in_transaction_timeout_ms = 60000
+
+[privy]
+# The dashboard at execute.cash signs in with Privy; its access tokens authenticate /v1/account/*.
+app_id = ""
+# PEM-encoded verification key from the Privy dashboard. "\n" escapes are accepted.
+verification_key = ""
+clock_skew_secs = 30
+
+[credentials]
+cache_ttl_secs = 30
+# Per-credential token buckets.
+api_key_rate_limit_per_second = 50
+api_key_rate_limit_burst = 100
+client_id_rate_limit_per_second = 10
+client_id_rate_limit_burst = 20
+max_allowed_origins = 20
+
+[addresses]
+# PaymentFactory, identical on every supported chain (gum-contracts Bootstrap.s.sol). /v1 is pinned to it.
+factory_address = ""
+min_expiry_lead_secs = 60
+# An address expires at most five minutes after it is created: the longest funds can wait if its
+# calls cannot run before they go back to recovery.
+max_expiry_lead_secs = 300
+# Watched for a day past expiry, so a late payment is still seen and refunded.
+late_payment_window_secs = 86400
+execute_retry_base_ms = 5000
+execute_retry_cap_ms = 60000
+expiry_margin_secs = 3
+
+[indexer]
+base_url = ""
+# gum-indexer's GUM_WEBHOOK__SECRET; verifies its deliveries to us.
+webhook_secret = ""
+timeout_ms = 5000
+
+[engine]
+base_url = ""
+# gum-engine's webhook.signing_secret; verifies its deliveries to us.
+webhook_secret = ""
+timeout_ms = 5000
+
+[webhooks]
+inbound_tolerance_secs = 300
+# Production: app webhooks must be public https URLs.
+allow_insecure_targets = false
+connect_timeout_ms = 3000
+request_timeout_ms = 10000
+retry_base_ms = 1000
+retry_cap_ms = 3600000
+max_age_secs = 86400
+
+[outbox]
+workers = 8
+poll_interval_ms = 500
+batch_size = 32
+lock_ttl_secs = 60
+# Jobs towards gum-indexer / gum-engine are on the critical path: short backoff cap, never given up.
+upstream_retry_cap_ms = 30000
+job_timeout_ms = 30000
+
+[reconciler]
+interval_secs = 15
+expiry_interval_secs = 2
+in_flight_stale_secs = 60
+in_flight_repoll_secs = 30
+open_stale_secs = 120
+token_check_interval_secs = 300
+
+[admin]
+# Bearer token for /v1/admin routes. Empty disables them.
+token = ""
+
+# ---------------------------------------------------------------------------------------------
+# Chains and the tokens an executable address may be funded with.
+#
+# Adding a token (a vault's share token, say) is a config change here and in gum-indexer, which must
+# watch it: add it to gum-indexer first (it checks `decimals()` at boot), then here. The reconciler
+# compares this list with gum-indexer's every `token_check_interval_secs` and logs any token it lacks.
+#
+# `enabled` (default true) offers the chain for new addresses. Turn a chain on only once the
+# PaymentFactory generation is deployed on it and gum-indexer and gum-engine serve it.
+# ---------------------------------------------------------------------------------------------
+
+[chains.monad]
+chain_id = 143
+
+[[chains.monad.tokens]]
+symbol = "USDC"
+address = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+decimals = 6
+
+[[chains.monad.tokens]]
+symbol = "USDT"
+address = "0xe7cd86e13AC4309349F30B3435a9d337750fC82D"
+decimals = 6
+
+[[chains.monad.tokens]]
+symbol = "AUSD"
+address = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"
+decimals = 6
+
+[chains.arbitrum]
+chain_id = 42161
+
+[[chains.arbitrum.tokens]]
+symbol = "USDC"
+address = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+decimals = 6
+
+[[chains.arbitrum.tokens]]
+symbol = "USDT"
+address = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+decimals = 6
+
+[chains.base]
+chain_id = 8453
+
+[[chains.base.tokens]]
+symbol = "USDC"
+address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+decimals = 6
+
+# Arc: USDC is the gas token; addresses use its 6-decimal ERC-20 interface, as on every other chain.
+[chains.arc]
+chain_id = 5042
+enabled = false
+
+[[chains.arc.tokens]]
+symbol = "USDC"
+address = "0x3600000000000000000000000000000000000000"
+decimals = 6

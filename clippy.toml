@@ -1,0 +1,8 @@
+# Holding a span guard across `.await` leaves the span "current" on the thread after the task moves
+# on; once it closes, the next span or event on that thread panics inside tracing-subscriber
+# ("tried to clone a span that already closed"). That panic killed the outbox task twice on
+# 2026-09-23. Use `.instrument(span)` instead.
+await-holding-invalid-types = [
+    { path = "tracing::span::Entered", reason = "use `.instrument(span)` in async code" },
+    { path = "tracing::span::EnteredSpan", reason = "use `.instrument(span)` in async code" },
+]
