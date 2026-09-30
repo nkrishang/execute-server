@@ -310,10 +310,15 @@ mod tests {
         assert_eq!(config.addresses.max_expiry_lead_secs, 300);
         assert!(!config.chains["arc"].enabled);
         assert!(["monad", "arbitrum", "base"].iter().all(|c| config.chains[*c].enabled));
-        let base: Vec<_> = config.chains["base"].tokens.iter().map(|t| t.symbol.as_str()).collect();
-        assert_eq!(base, ["USDC"]);
-        let monad: Vec<_> = config.chains["monad"].tokens.iter().map(|t| t.symbol.as_str()).collect();
-        assert_eq!(monad, ["USDC", "USDT", "AUSD"]);
+        // Stablecoins have 6 decimals; vault share tokens (for Switch) have ERC-4626's 18.
+        let with = |chain: &str, decimals: u8| -> Vec<&str> {
+            config.chains[chain].tokens.iter().filter(|t| t.decimals == decimals).map(|t| t.symbol.as_str()).collect()
+        };
+        assert_eq!(with("base", 6), ["USDC"]);
+        assert_eq!(with("monad", 6), ["USDC", "USDT", "AUSD"]);
+        assert!(["base", "monad", "arc"].iter().all(|c| !with(c, 18).is_empty()));
+        assert!(with("arbitrum", 18).is_empty());
+        assert!(config.chains.values().all(|c| c.tokens.iter().all(|t| t.decimals == 6 || t.decimals == 18)));
     }
 
     #[test]
